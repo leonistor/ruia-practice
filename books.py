@@ -4,7 +4,7 @@ from ruia import Item, AttrField, ElementField, TextField, Spider, Response
 
 OUTDIR = "output/books/" + datetime.datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
 BASE_URL = "https://books.toscrape.com/"
-LASTPAGE = 3
+LASTPAGE = 50
 
 
 class BookItem(Item):
@@ -77,7 +77,7 @@ class BooksSpider(Spider):
         book_urls = []
         async for item in BookLink.get_items(html=await response.text()):
             book_urls.append(item.link)
-        book_urls = book_urls[:3]
+        # book_urls = book_urls[:3]
         async for response in self.multiple_request(book_urls, is_gather=True):
             yield self.parse_book(response)
 
