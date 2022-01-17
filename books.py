@@ -3,7 +3,7 @@ import datetime, aiofiles
 from ruia import Item, AttrField, ElementField, TextField, Spider, Response
 
 OUTDIR = "output/books/" + datetime.datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
-BASE_URL = "https://books.toscrape.com/catalogue/"
+BASE_URL = "https://books.toscrape.com/"
 LASTPAGE = 3
 
 
@@ -49,9 +49,9 @@ class BookItem(Item):
             "title": self.title,
             "description": self.description,
             "price": self.price,
-            "rating": self.rating,
+            "rating": str(self.rating),
             "category": self.category,
-            "image": img_file,
+            "image_file": img_file,
         }
 
 
@@ -60,7 +60,7 @@ class BookLink(Item):
     link = AttrField(css_select="a", attr="href")
 
     async def clean_link(self, value):
-        return f"{BASE_URL}{value}"
+        return f"{BASE_URL}catalogue/{value}"
 
 
 class PageItem(Item):
@@ -69,7 +69,9 @@ class PageItem(Item):
 
 class BooksSpider(Spider):
     concurrency = 5
-    start_urls = [f"{BASE_URL}page-{index}.html" for index in range(1, LASTPAGE + 1)]
+    start_urls = [
+        f"{BASE_URL}catalogue/page-{index}.html" for index in range(1, LASTPAGE + 1)
+    ]
 
     async def parse(self, response: Response):
         book_urls = []
@@ -80,14 +82,31 @@ class BooksSpider(Spider):
             yield self.parse_book(response)
 
     async def parse_book(self, response: Response):
-        book = await BookItem.get_item(html=await response.text())
-        file = f"{OUTDIR}/{book.upc}.json"
-        async with aiofiles.open(file, "w") as f:
-            data = json.dumps(book.to_json())
-            await f.write(data)
+        book: BookItem = await BookItem.get_item(html=await response.text())
+
+        data = book.to_dict()
+        json_file = f"{OUTDIR}/{book.upc}.json"
+        image_file = data["image_file"]
+        image_url = f"{BASE_URL}{book.image}"
+        async with aiofiles.open(json_file, "w") as f:
+            self.logger.info(f"writing book json {book.upc}")
+            await f.write(json.dumps(data))
+        yield self.request(
+            url=image_url,
+            metadata={"filename": f"{OUTDIR}/{image_file}"},
+            callback=self.save_image,
+        )
 
     async def save_image(self, response: Response):
-        pass
+        try:
+            content = await response.read()
+        except Exception as e:
+            self.logger.error(e)
+        else:
+            filename = response.metadata["filename"]
+            async with aiofiles.open(filename, "wb") as f:
+                await f.write(content)
+                self.logger.info(f"saved image {filename}")
 
 
 async def after_start_fn(spider: Spider):
